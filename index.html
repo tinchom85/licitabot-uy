@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LicitaBot UY — Oportunidades del Estado en tiempo real</title>
+<meta name="description" content="Monitor de licitaciones públicas del Estado uruguayo. Datos en tiempo real de comprasestatales.gub.uy filtrados por organismo, tipo y rubro.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fff;--bg2:#f8f9fa;--bg3:#f1f3f5;
+  --line:#e9ecef;--line2:#dee2e6;
+  --text:#1a1a2e;--muted:#6c757d;--faint:#e9ecef;
+  --green:#16a34a;--green-l:#dcfce7;--green-m:#bbf7d0;
+  --amber:#b45309;--amber-l:#fef3c7;
+  --blue:#1d4ed8;--blue-l:#dbeafe;
+  --red:#dc2626;--red-l:#fee2e2;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg)}
+body{font-family:'Geist',system-ui,sans-serif;font-size:14px;line-height:1.5;color:var(--text);-webkit-font-smoothing:antialiased}
+
+/* NAV */
+nav{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:54px}
+.logo{display:flex;align-items:center;gap:8px;text-decoration:none}
+.logo-mark{width:28px;height:28px;background:var(--text);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.logo-mark svg{width:14px;height:14px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round}
+.logo-text{font-size:15px;font-weight:600;color:var(--text);letter-spacing:-0.3px}
+.nav-mid{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.ldot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s infinite;flex-shrink:0}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.nav-r{display:flex;align-items:center;gap:10px}
+.nav-lnk{font-size:13px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px;transition:background .12s,color .12s}
+.nav-lnk:hover{background:var(--bg2);color:var(--text)}
+.btn-p{font-size:13px;font-weight:500;padding:7px 16px;border-radius:7px;background:var(--text);color:#fff;text-decoration:none;transition:opacity .15s;white-space:nowrap}
+.btn-p:hover{opacity:.85}
+
+/* HERO */
+.hero{background:var(--bg2);border-bottom:1px solid var(--line);padding:24px}
+.hero h1{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-0.4px;margin-bottom:4px}
+.hero p{font-size:13px;color:var(--muted)}
+.hero a{color:var(--blue);text-decoration:none}
+.hero a:hover{text-decoration:underline}
+
+/* STATS */
+.stats{display:flex;gap:0;border-bottom:1px solid var(--line);background:#fff;overflow-x:auto}
+.stat{padding:16px 28px;border-right:1px solid var(--line);flex-shrink:0}
+.stat:last-child{border-right:none;margin-left:auto}
+.sv{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:500;color:var(--text);letter-spacing:-0.5px;line-height:1.1}
+.sl{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap}
+
+/* ERROR STATE */
+.error-banner{background:#fff3cd;border:1px solid #ffc107;border-radius:8px;margin:20px 24px;padding:14px 18px;font-size:13px;color:#856404}
+.error-banner strong{display:block;margin-bottom:4px}
+
+/* FILTERS */
+.filters{padding:12px 24px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fl{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;margin-right:4px}
+select{height:32px;padding:0 26px 0 10px;font-size:12px;font-family:inherit;background:#fff;border:1px solid var(--line2);border-radius:6px;color:var(--text);cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236c757d'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center;transition:border-color .12s;min-width:148px}
+select:focus{outline:none;border-color:var(--text);box-shadow:0 0 0 3px rgba(0,0,0,.06)}
+.fsep{width:1px;height:20px;background:var(--line);flex-shrink:0}
+.rc{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+.rc strong{color:var(--text)}
+
+/* TABLE */
+.thead{display:grid;grid-template-columns:70px minmax(0,1fr) 140px 140px 100px 110px;padding:8px 24px;background:var(--bg2);border-bottom:1px solid var(--line);position:sticky;top:54px;z-index:10}
+.th{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+
+/* ROWS */
+.feed{background:#fff}
+.row{display:grid;grid-template-columns:70px minmax(0,1fr) 140px 140px 100px 110px;padding:13px 24px;border-bottom:1px solid var(--line);align-items:center;transition:background .1s;text-decoration:none;color:inherit}
+.row:hover{background:var(--bg2)}
+.row:last-child{border-bottom:none}
+.row.ani{animation:fadein .3s ease both}
+@keyframes fadein{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+
+/* TIPO */
+.tipo{display:inline-flex;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500;padding:3px 7px;border-radius:5px;letter-spacing:.03em;border-width:1px;border-style:solid;white-space:nowrap}
+.LP{background:var(--blue-l);color:#1e40af;border-color:#bfdbfe}
+.LA{background:var(--green-l);color:#15803d;border-color:var(--green-m)}
+.CD{background:var(--bg3);color:#495057;border-color:var(--line2)}
+.CP{background:var(--amber-l);color:#92400e;border-color:#fde68a}
+.PG{background:#f3e8ff;color:#6b21a8;border-color:#e9d5ff}
+.OTR{background:var(--bg3);color:var(--muted);border-color:var(--line)}
+
+/* CELL */
+.corg{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px}
+.cobj{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cid{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px}
+.cmonto{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;color:var(--text)}
+.cmonto-s{font-size:10px;color:var(--muted)}
+.rp{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:132px}
+.dias{display:flex;align-items:baseline;gap:3px}
+.dn{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:500}
+.ds{font-size:11px;color:var(--muted)}
+.d-u .dn{color:var(--red)}
+.d-w .dn{color:var(--amber)}
+.d-o .dn{color:var(--green)}
+.d-n .dn{color:var(--text)}
+.nueva{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;background:var(--green-l);color:var(--green);border:1px solid var(--green-m)}
+.nueva::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green)}
+.vig{font-size:11px;color:var(--muted)}
+
+/* SKELETON */
+.sk-row{display:grid;grid-template-columns:70px minmax(0,1fr) 140px 140px 100px 110px;padding:13px 24px;border-bottom:1px solid var(--line);align-items:center}
+.sk{border-radius:4px;background:var(--bg3);animation:skp 1.4s ease infinite}
+@keyframes skp{0%,100%{opacity:.5}50%{opacity:1}}
+
+/* EMPTY */
+.empty{text-align:center;padding:60px 24px;color:var(--muted)}
+.empty-icon{font-size:32px;margin-bottom:12px;opacity:.4}
+.empty-title{font-size:15px;font-weight:500;color:var(--text);margin-bottom:6px}
+.empty-sub{font-size:13px}
+
+/* TOAST */
+.toast{position:fixed;bottom:90px;right:20px;z-index:200;background:#fff;border:1px solid var(--green-m);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.1);padding:12px 14px;max-width:280px;display:flex;align-items:flex-start;gap:10px;transform:translateX(320px);opacity:0;transition:transform .3s ease,opacity .3s ease;pointer-events:none}
+.toast.show{transform:translateX(0);opacity:1}
+.td{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;margin-top:4px}
+.tt{font-size:12px;font-weight:500;color:var(--text);margin-bottom:2px}
+.tb{font-size:11px;color:var(--muted);line-height:1.4}
+
+/* CTA */
+.cta{position:fixed;bottom:0;left:0;right:0;z-index:100;background:#fff;border-top:1px solid var(--line);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.cta-txt{font-size:13px;color:var(--text)}
+.cta-txt span{color:var(--muted);font-size:12px;display:block;margin-top:1px}
+.cta-btns{display:flex;gap:8px;flex-shrink:0}
+.btn-wa{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:500;padding:8px 16px;border-radius:7px;background:var(--green);color:#fff;text-decoration:none;border:none;cursor:pointer;transition:opacity .15s}
+.btn-wa:hover{opacity:.88}
+.btn-wa svg{width:14px;height:14px;fill:#fff;flex-shrink:0}
+.btn-s{font-size:12px;padding:8px 14px;border-radius:7px;border:1px solid var(--line2);color:var(--text);text-decoration:none;transition:border-color .12s}
+.btn-s:hover{border-color:var(--text)}
+
+/* SOURCE NOTE */
+.source{background:var(--bg2);border-top:1px solid var(--line);padding:10px 24px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.source a{color:var(--blue);text-decoration:none}
+.source a:hover{text-decoration:underline}
+.upd{margin-left:auto;white-space:nowrap}
+
+/* RESPONSIVE */
+@media(max-width:960px){
+  .thead,.row,.sk-row{grid-template-columns:63px minmax(0,1fr) 120px 110px}
+  .th:nth-child(5),.th:nth-child(6),.row>*:nth-child(5),.row>*:nth-child(6),.sk-row>*:nth-child(5),.sk-row>*:nth-child(6){display:none}
+}
+@media(max-width:640px){
+  .thead,.row,.sk-row{grid-template-columns:56px minmax(0,1fr) 80px}
+  .th:nth-child(4),.row>*:nth-child(4),.sk-row>*:nth-child(4){display:none}
+  .cta{flex-direction:column;align-items:flex-start}
+  .nav-lnk{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 14 14"><polyline points="2,10 5,6 8,8 12,3"/><circle cx="12" cy="3" r="1.5"/></svg>
+    </div>
+    <span class="logo-text">LicitaBot UY</span>
+  </a>
+  <div class="nav-mid">
+    <div class="ldot"></div>
+    <span id="nav-update">Cargando datos...</span>
+  </div>
+  <div class="nav-r">
+    <a href="https://agente.uy" class="nav-lnk" target="_blank">Sobre nosotros</a>
+    <a href="https://wa.me/59899000000?text=Hola,%20quiero%20recibir%20alertas%20de%20licitaciones" class="btn-p" target="_blank">Recibir alertas</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <h1>Oportunidades del Estado uruguayo — en tiempo real</h1>
+  <p>Datos de <a href="https://www.comprasestatales.gub.uy" target="_blank">comprasestatales.gub.uy</a> (ARCE) · Actualizado automáticamente cada 24 horas · Filtrá por organismo, tipo y rubro</p>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="sv" id="s-total">—</div><div class="sl">Llamados vigentes</div></div>
+  <div class="stat"><div class="sv" id="s-monto">—</div><div class="sl">Valor total estimado (UYU)</div></div>
+  <div class="stat"><div class="sv" id="s-nuevas">—</div><div class="sl">Nuevas últimas 24h</div></div>
+  <div class="stat"><div class="sv" id="s-urg">—</div><div class="sl">Cierran en ≤7 días</div></div>
+  <div class="stat"><div class="sv" style="font-size:13px;color:var(--muted)" id="s-fecha">—</div><div class="sl">Última actualización</div></div>
+</div>
+
+<div id="error-area"></div>
+
+<div class="filters">
+  <span class="fl">Filtrar</span>
+  <select id="f-org" onchange="applyFilters()"><option value="">Todos los organismos</option></select>
+  <select id="f-tipo" onchange="applyFilters()">
+    <option value="">Todos los tipos</option>
+    <option value="LP">Licitación Pública</option>
+    <option value="LA">Licitación Abreviada</option>
+    <option value="CD">Compra Directa</option>
+    <option value="CP">Concurso de Precios</option>
+  </select>
+  <select id="f-rubro" onchange="applyFilters()"><option value="">Todos los rubros</option></select>
+  <select id="f-plazo" onchange="applyFilters()">
+    <option value="">Cualquier plazo</option>
+    <option value="3">Cierran en 3 días</option>
+    <option value="7">Cierran en 7 días</option>
+    <option value="15">Cierran en 15 días</option>
+    <option value="30">Cierran en 30 días</option>
+  </select>
+  <div class="fsep"></div>
+  <div class="rc">Mostrando <strong id="c-s">—</strong> de <strong id="c-t">—</strong></div>
+</div>
+
+<div class="thead">
+  <div class="th">Tipo</div>
+  <div class="th">Objeto · Organismo</div>
+  <div class="th">Monto estimado</div>
+  <div class="th">Rubro</div>
+  <div class="th">Cierra en</div>
+  <div class="th">Estado</div>
+</div>
+
+<div class="feed" id="feed">
+  <div class="sk-row"><div class="sk" style="height:20px;width:46px"></div><div><div class="sk" style="height:11px;width:130px;margin-bottom:5px"></div><div class="sk" style="height:13px;width:290px"></div></div><div class="sk" style="height:13px;width:80px"></div><div class="sk" style="height:20px;width:110px;border-radius:20px"></div><div class="sk" style="height:16px;width:38px"></div><div class="sk" style="height:18px;width:54px;border-radius:20px"></div></div>
+  <div class="sk-row"><div class="sk" style="height:20px;width:46px"></div><div><div class="sk" style="height:11px;width:100px;margin-bottom:5px"></div><div class="sk" style="height:13px;width:240px"></div></div><div class="sk" style="height:13px;width:70px"></div><div class="sk" style="height:20px;width:95px;border-radius:20px"></div><div class="sk" style="height:16px;width:32px"></div><div class="sk" style="height:13px;width:46px"></div></div>
+  <div class="sk-row"><div class="sk" style="height:20px;width:46px"></div><div><div class="sk" style="height:11px;width:150px;margin-bottom:5px"></div><div class="sk" style="height:13px;width:310px"></div></div><div class="sk" style="height:13px;width:85px"></div><div class="sk" style="height:20px;width:120px;border-radius:20px"></div><div class="sk" style="height:16px;width:40px"></div><div class="sk" style="height:18px;width:54px;border-radius:20px"></div></div>
+</div>
+
+<div class="source" id="source" style="display:none">
+  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0"><circle cx="6" cy="6" r="5" stroke="#6c757d" stroke-width="1"/><path d="M6 5v4M6 4V3" stroke="#6c757d" stroke-width="1.2" stroke-linecap="round"/></svg>
+  Datos de <a href="https://www.comprasestatales.gub.uy" target="_blank">comprasestatales.gub.uy</a> bajo <a href="https://catalogodatos.gub.uy" target="_blank">Licencia de Datos Abiertos de Uruguay</a>.
+  <span class="upd" id="upd-txt"></span>
+</div>
+
+<div class="toast" id="toast">
+  <div class="td"></div>
+  <div><div class="tt" id="tt"></div><div class="tb" id="tb"></div></div>
+</div>
+
+<div class="cta">
+  <div class="cta-txt">
+    <strong>¿Tu empresa provee al Estado? Recibí alertas de tu rubro por WhatsApp.</strong>
+    <span>Sin app · Sin registro complejo · Gratis para empezar</span>
+  </div>
+  <div class="cta-btns">
+    <a href="https://wa.me/59899000000?text=Hola,%20quiero%20recibir%20alertas%20de%20licitaciones%20de%20LicitaBot%20UY" class="btn-wa" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.136.561 4.14 1.534 5.878L.057 23.514a.5.5 0 0 0 .615.612l5.735-1.501A11.946 11.946 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.944 9.944 0 0 1-5.148-1.43l-.37-.22-3.4.89.906-3.3-.24-.38A10 10 0 1 1 12 22z"/></svg>
+      Alertas por WhatsApp
+    </a>
+    <a href="https://agente.uy" class="btn-s" target="_blank">Ver planes →</a>
+  </div>
+</div>
+
+<script>
+// ─── Estado global ───────────────────────────
+let ALL = [];
+let visible = [];
+
+// ─── Helpers ─────────────────────────────────
+function fmt(n, moneda) {
+  if (n === null || n === undefined) return null;
+  const sym = (moneda === 'USD') ? 'U$S' : '$';
+  if (n >= 1_000_000) return sym + (n / 1_000_000).toFixed(1).replace('.0','') + 'M';
+  if (n >= 1_000)     return sym + Math.round(n / 1_000) + 'K';
+  return sym + Math.round(n).toLocaleString('es-UY');
+}
+
+function dc(d) {
+  if (typeof d !== 'number') return 'd-n';
+  if (d <= 3)  return 'd-u';
+  if (d <= 7)  return 'd-w';
+  if (d <= 15) return 'd-o';
+  return 'd-n';
+}
+
+function fmtFecha(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('es-UY', {
+      day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
+    });
+  } catch { return iso; }
+}
+
+function animNum(id, target, prefix = '') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  let c = 0; const step = Math.max(1, Math.ceil(target / 25));
+  const iv = setInterval(() => {
+    c = Math.min(c + step, target);
+    el.textContent = prefix + c;
+    if (c >= target) clearInterval(iv);
+  }, 35);
+}
+
+// ─── Renderizado ─────────────────────────────
+function makeRow(l, idx, animate) {
+  const a = document.createElement('a');
+  a.className = 'row' + (animate && idx < 5 ? ' ani' : '');
+  if (animate && idx < 5) a.style.animationDelay = (idx * 50) + 'ms';
+  a.href = l.url || `https://www.comprasestatales.gub.uy/consultas/`;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+
+  const montoStr = l.monto ? fmt(l.monto, l.moneda) : '<span style="color:var(--muted)">No informado</span>';
+  const diasStr = typeof l.dias === 'number'
+    ? `<div class="dias ${dc(l.dias)}"><span class="dn">${l.dias}</span><span class="ds">&nbsp;días</span></div>`
+    : '<span style="font-size:11px;color:var(--muted)">—</span>';
+
+  a.innerHTML = `
+    <div><span class="tipo ${l.tipo}">${l.tipo}</span></div>
+    <div>
+      <div class="corg">${l.org}${l.ue ? ' · ' + l.ue : ''}</div>
+      <div class="cobj">${l.obj}</div>
+      <div class="cid">${l.nro || l.id}</div>
+    </div>
+    <div>
+      <div class="cmonto">${montoStr}</div>
+      ${l.monto ? '<div class="cmonto-s">estimado ' + (l.moneda || 'UYU') + '</div>' : ''}
+    </div>
+    <div><span class="rp">${l.rubro}</span></div>
+    ${diasStr}
+    <div>${l.nueva ? '<span class="nueva">Nueva</span>' : '<span class="vig">Vigente</span>'}</div>
+  `;
+  return a;
+}
+
+function render(animate) {
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '';
+
+  if (visible.length === 0) {
+    feed.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">○</div>
+        <div class="empty-title">Sin resultados para estos filtros</div>
+        <div class="empty-sub">Probá con otros criterios de búsqueda</div>
+      </div>`;
+  } else {
+    [...visible]
+      .sort((a, b) => {
+        const da = typeof a.dias === 'number' ? a.dias : 999;
+        const db = typeof b.dias === 'number' ? b.dias : 999;
+        return da - db || (b.monto || 0) - (a.monto || 0);
+      })
+      .forEach((l, i) => feed.appendChild(makeRow(l, i, animate)));
+  }
+
+  document.getElementById('c-s').textContent = visible.length;
+  document.getElementById('c-t').textContent = ALL.length;
+}
+
+// ─── Filtros ─────────────────────────────────
+function applyFilters() {
+  const org   = document.getElementById('f-org').value;
+  const tipo  = document.getElementById('f-tipo').value;
+  const rubro = document.getElementById('f-rubro').value;
+  const plazo = document.getElementById('f-plazo').value;
+
+  visible = ALL.filter(l => {
+    if (org   && l.org   !== org)             return false;
+    if (tipo  && l.tipo  !== tipo)            return false;
+    if (rubro && l.rubro !== rubro)           return false;
+    if (plazo && typeof l.dias === 'number' && l.dias > parseInt(plazo)) return false;
+    return true;
+  });
+  render(false);
+}
+
+function populateSelects() {
+  const orgs   = [...new Set(ALL.map(l => l.org).filter(Boolean))].sort();
+  const rubros = [...new Set(ALL.map(l => l.rubro).filter(Boolean))].sort();
+
+  const fo = document.getElementById('f-org');
+  orgs.forEach(o => { const op = document.createElement('option'); op.value = o; op.textContent = o; fo.appendChild(op); });
+
+  const fr = document.getElementById('f-rubro');
+  rubros.forEach(r => { const op = document.createElement('option'); op.value = r; op.textContent = r; fr.appendChild(op); });
+}
+
+// ─── Toast ───────────────────────────────────
+let toastQ = [];
+let toastBusy = false;
+
+function queueToast(t, b) { toastQ.push([t, b]); if (!toastBusy) nextToast(); }
+
+function nextToast() {
+  if (!toastQ.length) { toastBusy = false; return; }
+  toastBusy = true;
+  const [t, b] = toastQ.shift();
+  document.getElementById('tt').textContent = t;
+  document.getElementById('tb').textContent = b;
+  const el = document.getElementById('toast');
+  el.classList.add('show');
+  setTimeout(() => { el.classList.remove('show'); setTimeout(nextToast, 500); }, 5000);
+}
+
+// ─── Carga de datos ──────────────────────────
+async function loadData() {
+  try {
+    // Cache-bust para asegurar datos frescos
+    const res = await fetch('data.json?v=' + Date.now());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    ALL = data.licitaciones || [];
+    visible = [...ALL];
+
+    // Stats
+    const s = data.stats || {};
+    animNum('s-total',  s.total   || ALL.length);
+    animNum('s-nuevas', s.nuevas24 || ALL.filter(l => l.nueva).length);
+    animNum('s-urg',    s.urgentes || ALL.filter(l => l.dias <= 7).length);
+
+    const montoM = s.montoM || (s.montoUYU ? (s.montoUYU / 1_000_000).toFixed(0) : null);
+    document.getElementById('s-monto').textContent = montoM ? '$' + montoM + 'M' : '—';
+
+    // Fecha de actualización
+    const upd = data.meta?.actualizado
+      ? fmtFecha(data.meta.actualizado)
+      : new Date().toLocaleDateString('es-UY');
+    document.getElementById('s-fecha').textContent = upd;
+    document.getElementById('nav-update').textContent = 'Datos de ' + upd;
+    document.getElementById('upd-txt').textContent = 'Actualizado: ' + upd;
+    document.getElementById('source').style.display = 'flex';
+
+    populateSelects();
+    render(true);
+
+    // Toasts de las nuevas
+    const nuevas = ALL.filter(l => l.nueva).slice(0, 3);
+    nuevas.forEach((l, i) => {
+      setTimeout(() => {
+        queueToast(
+          `Nueva — ${l.org}`,
+          `${l.tipo} · ${l.obj.slice(0, 70)}${l.obj.length > 70 ? '…' : ''} · ${typeof l.dias === 'number' ? l.dias + ' días' : ''}`
+        );
+      }, 1500 + i * 8000);
+    });
+
+  } catch (err) {
+    console.error('Error cargando data.json:', err);
+    document.getElementById('feed').innerHTML = '';
+    document.getElementById('error-area').innerHTML = `
+      <div class="error-banner">
+        <strong>No se pudieron cargar los datos en tiempo real</strong>
+        Esta demo requiere que el archivo <code>data.json</code> esté generado por el scraper de ARCE.
+        Si estás probando localmente, ejecutá <code>python scraper/arce_scraper.py</code> primero.
+        <br><br>
+        <a href="https://www.comprasestatales.gub.uy" target="_blank">→ Ir directamente a comprasestatales.gub.uy</a>
+      </div>`;
+    document.getElementById('c-s').textContent = '0';
+    document.getElementById('c-t').textContent = '0';
+    document.getElementById('nav-update').textContent = 'Error al cargar datos';
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
