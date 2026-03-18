@@ -1,8 +1,10 @@
 """
-arce_scraper.py
----------------
-Scraper oficial de la Interfaz G2B de ARCE (comprasestatales.gub.uy).
-URL y parametros segun Manual G2B v5.9 y g2b_client.py de referencia.
+arce_scraper.py v3.0
+--------------------
+Scraper G2B de ARCE con codigueras para nombres reales de organismos.
+- Carga incisos, unidades ejecutoras y tipos de compra al inicio
+- Cruza id_inciso + id_ue para mostrar nombre real del organismo
+- URL y params segun Manual G2B v5.9
 """
 
 import xml.etree.ElementTree as ET
@@ -23,8 +25,14 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("arce")
 
-# URL CORRECTA segun Manual G2B y g2b_client.py de referencia
-ARCE_BASE = "http://www.comprasestatales.gub.uy/comprasenlinea/jboss/generarReporte"
+# ──────────────────────────────────────────────
+# URLs segun Manual G2B v5.9
+# ──────────────────────────────────────────────
+BASE = "http://www.comprasestatales.gub.uy/comprasenlinea/jboss"
+ARCE_REPORTE    = f"{BASE}/generarReporte"
+ARCE_INCISOS    = f"{BASE}/reporteIncisos.do"
+ARCE_UES        = f"{BASE}/reporteUnidadesEjecutoras.do"
+ARCE_TIPOS      = f"{BASE}/reporteTiposCompra.do"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -32,6 +40,9 @@ HEADERS = {
 
 MAX_ITEMS = 200
 
+# ──────────────────────────────────────────────
+# Rubros por palabras clave
+# ──────────────────────────────────────────────
 RUBROS = {
     "Tecnologia e IT": ["software","hardware","informatica","tecnologia","sistema","red","telecomunicaciones","digital","servidor","nube","cloud","ciberseguridad","firewall","desarrollo","datos","soporte tecnico","licencias","equipamiento informatico","computadora","laptop"],
     "Construccion e infraestructura": ["construccion","obra","vial","ruta","pavimento","puente","edificio","infraestructura","refaccion","ampliacion","senalizacion","saneamiento","agua potable","hormigon","cemento","materiales de construccion"],
@@ -55,6 +66,110 @@ def clasificar_rubro(texto):
             return rubro
     return "Otros"
 
+# ──────────────────────────────────────────────
+# Carga de codigueras
+# ──────────────────────────────────────────────
+def cargar_xml_codiguera(url: str, client: httpx.Client) -> ET.Element | None:
+    """Descarga y parsea una codiguera XML de ARCE."""
+    try:
+        resp = client.get(url, timeout=20)
+        resp.raise_for_status()
+        # Las codigueras usan ISO-8859-1 segun el manual
+        content = resp.content
+        for enc in [None, "iso-8859-1", "latin-1", "utf-8"]:
+            try:
+                root = ET.fromstring(content.decode(enc, errors="replace") if enc else content)
+                return root
+            except Exception:
+                continue
+        return None
+    except Exception as e:
+        log.warning(f"No se pudo cargar codiguera {url}: {e}")
+        return None
+
+def cargar_incisos(client: httpx.Client) -> dict:
+    """
+    Retorna {id_inciso: nom_inciso}
+    Estructura: <incisos><inciso id-inciso="1" nom-inciso="Poder Legislativo"/></incisos>
+    """
+    log.info("Cargando codiguera: Incisos...")
+    root = cargar_xml_codiguera(ARCE_INCISOS, client)
+    if root is None:
+        return {}
+    result = {}
+    for node in root.findall(".//inciso"):
+        id_i = node.get("id-inciso") or node.get("id_inciso")
+        nom  = node.get("nom-inciso") or node.get("nom_inciso")
+        if id_i and nom:
+            result[id_i.strip()] = nom.strip()
+    log.info(f"  -> {len(result)} incisos cargados")
+    return result
+
+def cargar_unidades_ejecutoras(client: httpx.Client) -> dict:
+    """
+    Retorna {(id_inciso, id_ue): nom_ue}
+    Estructura: <unidades-ejecutoras><unidad-ejecutora id-inciso="1" id-ue="1" nom-ue="Camara de Senadores"/></unidades-ejecutoras>
+    """
+    log.info("Cargando codiguera: Unidades Ejecutoras...")
+    root = cargar_xml_codiguera(ARCE_UES, client)
+    if root is None:
+        return {}
+    result = {}
+    for node in root.findall(".//unidad-ejecutora"):
+        id_i  = node.get("id-inciso") or node.get("id_inciso")
+        id_ue = node.get("id-ue")     or node.get("id_ue")
+        nom   = node.get("nom-ue")    or node.get("nom_ue")
+        if id_i and id_ue and nom:
+            result[(id_i.strip(), id_ue.strip())] = nom.strip()
+    log.info(f"  -> {len(result)} unidades ejecutoras cargadas")
+    return result
+
+def cargar_tipos_compra(client: httpx.Client) -> dict:
+    """
+    Retorna {id_tipo: descripcion}
+    Estructura: <tipos-compra><tipo-compra id="CD" descripcion="Compra Directa" .../></tipos-compra>
+    """
+    log.info("Cargando codiguera: Tipos de Compra...")
+    root = cargar_xml_codiguera(ARCE_TIPOS, client)
+    if root is None:
+        return {}
+    result = {}
+    for node in root.findall(".//tipo-compra"):
+        id_t = node.get("id")
+        desc = node.get("descripcion")
+        if id_t and desc:
+            result[id_t.strip()] = desc.strip()
+    log.info(f"  -> {len(result)} tipos de compra cargados")
+    return result
+
+def resolver_organismo(id_inciso, id_ue, incisos: dict, ues: dict) -> str:
+    """
+    Resuelve el nombre del organismo a partir de id_inciso e id_ue.
+    Prioridad: nombre UE especifico > nombre inciso > fallback numerico
+    """
+    if not id_inciso:
+        return ""
+    
+    id_i = str(id_inciso).strip()
+    id_u = str(id_ue).strip() if id_ue else None
+
+    # 1. Intentar nombre de la UE especifica
+    if id_u:
+        nom_ue = ues.get((id_i, id_u))
+        if nom_ue:
+            return nom_ue
+
+    # 2. Fallback al nombre del inciso
+    nom_inciso = incisos.get(id_i)
+    if nom_inciso:
+        return nom_inciso
+
+    # 3. Fallback numerico
+    return f"Organismo {id_i}"
+
+# ──────────────────────────────────────────────
+# Parseo de compras
+# ──────────────────────────────────────────────
 def parse_monto(val):
     if not val:
         return None
@@ -82,31 +197,34 @@ def dias_para_cierre(fecha_iso):
     except (ValueError, TypeError):
         return None
 
-def parse_xml_arce(xml_bytes):
+def parse_xml_compras(xml_bytes, incisos: dict, ues: dict, tipos: dict) -> list[dict]:
+    """
+    Parsea el XML de compras enriqueciendo con nombres reales de codigueras.
+    Estructura segun DTD del manual: reporte > reporte_dato > compra
+    Atributos del nodo <compra>:
+      id_compra, id_inciso, id_ue, id_tipocompra, num_compra, anio_compra,
+      objeto, fecha_publicacion, fecha_hora_apertura, nombre_contacto, etc.
+    """
     items = []
     root = None
-    for encoding in [None, "latin-1", "utf-8"]:
+    for enc in [None, "iso-8859-1", "latin-1", "utf-8"]:
         try:
-            if encoding:
-                root = ET.fromstring(xml_bytes.decode(encoding, errors="replace"))
-            else:
-                root = ET.fromstring(xml_bytes)
+            root = ET.fromstring(xml_bytes.decode(enc, errors="replace") if enc else xml_bytes)
             break
         except Exception:
             continue
 
     if root is None:
-        log.warning("No se pudo parsear el XML")
+        log.warning("No se pudo parsear el XML de compras")
         return []
 
-    compras = root.findall(".//compra") or root.findall(".//Compra") or root.findall(".//COMPRA")
+    compras = root.findall(".//compra") or root.findall(".//Compra")
     log.info(f"  -> {len(compras)} compras en XML")
-
     if compras:
-        log.info(f"  Atributos del primer nodo: {list(compras[0].keys())}")
+        log.info(f"  Atributos muestra: {list(compras[0].keys())[:12]}")
 
     for c in compras:
-        def attr(*names):
+        def a(*names):
             for n in names:
                 v = c.get(n)
                 if v and v.strip():
@@ -116,39 +234,85 @@ def parse_xml_arce(xml_bytes):
                     return child.text.strip()
             return None
 
-        nro       = attr("nroCompra","numero","nro","id")
-        tipo      = attr("tipoCompra","tipo","tipo-compra")
-        desc      = attr("descripcion","objeto","descripcionCompra","nombre")
-        organismo = attr("organismo","nombreOrganismo","nom-organismo","inciso")
-        ue        = attr("unidadEjecutora","nombreUE","nom-ue","ue")
-        monto_raw = attr("montoEstimado","monto","importeEstimado","importe")
-        moneda    = attr("moneda","tipoMoneda") or "UYU"
-        f_pub     = attr("fechaPublicacion","fechaPub","fecha-publicacion")
-        f_cierre  = attr("fechaCierre","fechaApertura","fecha-cierre","fecha-apertura")
-        nro_lic   = attr("nroLicitacion","nroLic","numero-licitacion")
+        # Campos del manual G2B
+        id_compra  = a("id_compra","id-compra")
+        id_inciso  = a("id_inciso","id-inciso")
+        id_ue      = a("id_ue","id-ue")
+        id_tipo    = a("id_tipocompra","id-tipocompra","tipoCompra","tipo")
+        num_compra = a("num_compra","num-compra","nroCompra","numero")
+        anio       = a("anio_compra","anio-compra")
+        objeto     = a("objeto","descripcion","objeto_compra")
+        f_pub      = a("fecha_publicacion","fechaPublicacion","fecha-publicacion")
+        f_apertura = a("fecha_hora_apertura","fechaApertura","fecha_hora_apertura","fechaCierre")
+        f_tope     = a("fecha_hora_tope_entrega","fecha_hora_tope-entrega")
+        nombre_pliego = a("nombre_pliego","nombre-pliego")
+        contacto   = a("nombre_contacto","nombre-contacto")
+        email      = a("email_contacto","email-contacto")
 
-        id_unico = nro or f"{tipo or 'X'}-{nro_lic or (desc[:20] if desc else 'sin-id')}"
-        fecha_pub_iso    = parse_fecha(f_pub)
-        fecha_cierre_iso = parse_fecha(f_cierre)
+        # ID unico
+        id_unico = id_compra or f"{id_tipo or 'X'}-{num_compra or ''}-{anio or ''}"
+
+        # Nombre del organismo via codigueras
+        nombre_org = resolver_organismo(id_inciso, id_ue, incisos, ues)
+
+        # Nombre largo del tipo de compra
+        tipo_desc = tipos.get(id_tipo, id_tipo) if id_tipo else "?"
+
+        # Fechas
+        fecha_pub_iso = parse_fecha(f_pub)
+        # Usar fecha_hora_tope_entrega como cierre, o fecha_hora_apertura como fallback
+        fecha_cierre_iso = parse_fecha(f_tope) or parse_fecha(f_apertura)
+        dias = dias_para_cierre(fecha_cierre_iso)
+
+        # Monto (en compras vigentes suele no estar, viene en adjudicaciones)
+        monto_raw = a("monto_adj","monto-adj","montoEstimado","monto")
         monto  = parse_monto(monto_raw)
-        dias   = dias_para_cierre(fecha_cierre_iso)
-        rubro  = clasificar_rubro(desc or "")
-        url    = f"https://www.comprasestatales.gub.uy/comprasenlinea/compra/detalle?nroCompra={nro}" if nro else "https://www.comprasestatales.gub.uy"
+        moneda_id = a("id_moneda_monto_adj","id-moneda-monto-adj","id_moneda","moneda") or "0"
+        # 0 = pesos uruguayos segun codiguera monedas
+        moneda = "UYU" if moneda_id in ("0", "UYU", "") else "USD" if moneda_id in ("1", "2") else moneda_id
+
+        # URL al pliego
+        if nombre_pliego:
+            url_pliego = f"http://www.comprasestatales.gub.uy/Pliegos/{nombre_pliego}"
+        elif id_compra:
+            url_pliego = f"https://www.comprasestatales.gub.uy/comprasenlinea/compra/detalle?nroCompra={id_compra}"
+        else:
+            url_pliego = "https://www.comprasestatales.gub.uy"
+
+        rubro = clasificar_rubro(objeto or "")
 
         items.append({
-            "id": id_unico, "nro": nro, "nroLic": nro_lic,
-            "tipo": tipo or "?", "obj": desc or "", "org": organismo or "",
-            "ue": ue or "", "monto": monto, "moneda": moneda,
-            "fechaPub": fecha_pub_iso, "fechaCierre": fecha_cierre_iso,
-            "dias": dias, "rubro": rubro, "url": url, "nueva": False,
+            "id":          id_unico,
+            "idCompra":    id_compra,
+            "nro":         num_compra,
+            "anio":        anio,
+            "tipo":        id_tipo or "?",
+            "tipoNombre":  tipo_desc,
+            "obj":         objeto or "",
+            "org":         nombre_org,
+            "orgId":       id_inciso or "",
+            "ueId":        id_ue or "",
+            "contacto":    contacto or "",
+            "email":       email or "",
+            "monto":       monto,
+            "moneda":      moneda,
+            "fechaPub":    fecha_pub_iso,
+            "fechaCierre": fecha_cierre_iso,
+            "dias":        dias,
+            "rubro":       rubro,
+            "url":         url_pliego,
+            "nueva":       False,
         })
+
     return items
 
-def fetch_licitaciones(days_back=10):
+# ──────────────────────────────────────────────
+# Fetch principal
+# ──────────────────────────────────────────────
+def fetch_todo(days_back=10) -> list[dict]:
     end_date   = datetime.now()
     start_date = end_date - timedelta(days=min(days_back, 10))
 
-    # Parametros CORRECTOS segun manual G2B
     params = {
         "tipo_publicacion": "lv",
         "anio_inicial": str(start_date.year),
@@ -161,22 +325,32 @@ def fetch_licitaciones(days_back=10):
         "hora_final":   f"{end_date.hour:02d}",
     }
 
-    log.info(f"URL: {ARCE_BASE}")
-    log.info(f"Rango: {start_date.strftime('%d/%m/%Y')} -> {end_date.strftime('%d/%m/%Y')}")
+    log.info(f"Rango: {start_date.strftime('%d/%m/%Y %H:%M')} -> {end_date.strftime('%d/%m/%Y %H:%M')}")
 
-    try:
-        with httpx.Client(headers=HEADERS, timeout=30, follow_redirects=True) as client:
-            resp = client.get(ARCE_BASE, params=params)
-            log.info(f"HTTP {resp.status_code} — {len(resp.content)} bytes")
+    with httpx.Client(headers=HEADERS, timeout=30, follow_redirects=True) as client:
+        # 1. Cargar codigueras primero
+        incisos = cargar_incisos(client)
+        ues     = cargar_unidades_ejecutoras(client)
+        tipos   = cargar_tipos_compra(client)
+
+        # 2. Fetch compras vigentes
+        log.info(f"Consultando ARCE: {ARCE_REPORTE}")
+        try:
+            resp = client.get(ARCE_REPORTE, params=params)
+            log.info(f"HTTP {resp.status_code} — {len(resp.content):,} bytes")
             resp.raise_for_status()
-            return parse_xml_arce(resp.content)
-    except httpx.HTTPStatusError as e:
-        log.error(f"HTTP error: {e.response.status_code}")
-        return []
-    except httpx.RequestError as e:
-        log.error(f"Error de conexion: {e}")
-        return []
+        except httpx.HTTPStatusError as e:
+            log.error(f"HTTP error: {e.response.status_code}")
+            return []
+        except httpx.RequestError as e:
+            log.error(f"Error de conexion: {e}")
+            return []
 
+        return parse_xml_compras(resp.content, incisos, ues, tipos)
+
+# ──────────────────────────────────────────────
+# Post-procesamiento
+# ──────────────────────────────────────────────
 def marcar_nuevas(items, data_anterior):
     ids_anteriores = {l["id"] for l in data_anterior.get("licitaciones", [])}
     hoy = datetime.now()
@@ -195,24 +369,33 @@ def marcar_nuevas(items, data_anterior):
 def calcular_stats(items):
     nuevas   = [l for l in items if l.get("nueva")]
     urgentes = [l for l in items if isinstance(l.get("dias"), int) and l["dias"] <= 7]
-    monto_total = sum(l["monto"] for l in items if l.get("monto") and l.get("moneda") in ("UYU",""))
+    monto_total = sum(l["monto"] for l in items if l.get("monto") and l.get("moneda") == "UYU")
     return {
-        "total": len(items), "nuevas24": len(nuevas), "urgentes": len(urgentes),
-        "montoUYU": round(monto_total), "montoM": round(monto_total / 1_000_000, 1),
+        "total":    len(items),
+        "nuevas24": len(nuevas),
+        "urgentes": len(urgentes),
+        "montoUYU": round(monto_total),
+        "montoM":   round(monto_total / 1_000_000, 1),
     }
 
 def filtrar_relevantes(items):
     validos = [l for l in items if l.get("obj") and l.get("org")]
     validos = [l for l in validos if not (isinstance(l.get("dias"), int) and l["dias"] < 0)]
-    validos.sort(key=lambda l: (l.get("dias") if isinstance(l.get("dias"), int) else 999, -(l.get("monto") or 0)))
+    validos.sort(key=lambda l: (
+        l.get("dias") if isinstance(l.get("dias"), int) else 999,
+        -(l.get("monto") or 0)
+    ))
     return validos[:MAX_ITEMS]
 
+# ──────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────
 def main():
     repo_root   = Path(__file__).parent.parent
     output_path = repo_root / "data.json"
 
     log.info("=" * 50)
-    log.info("LicitaBot UY — Scraper ARCE G2B")
+    log.info("LicitaBot UY — Scraper ARCE G2B v3.0")
     log.info(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     log.info("=" * 50)
 
@@ -221,11 +404,11 @@ def main():
         try:
             with open(output_path, encoding="utf-8") as f:
                 data_anterior = json.load(f)
-            log.info(f"Data anterior: {len(data_anterior.get('licitaciones',[]))} items")
+            log.info(f"Data anterior: {len(data_anterior.get('licitaciones', []))} items")
         except Exception:
             log.warning("No se pudo leer data anterior")
 
-    items_raw = fetch_licitaciones(days_back=10)
+    items_raw = fetch_todo(days_back=10)
 
     if not items_raw:
         log.error("ARCE no devolvio datos.")
@@ -238,11 +421,26 @@ def main():
     items = filtrar_relevantes(items)
     stats = calcular_stats(items)
 
-    log.info(f"Items finales: {len(items)} | Stats: {stats}")
+    log.info(f"Items finales: {len(items)}")
+    log.info(f"Stats: {stats}")
+
+    # Estadisticas por organismo (top 5)
+    por_org = {}
+    for l in items:
+        org = l.get("org", "?")
+        por_org[org] = por_org.get(org, 0) + 1
+    top_orgs = sorted(por_org.items(), key=lambda x: -x[1])[:5]
+    log.info(f"Top organismos: {top_orgs}")
 
     output = {
-        "meta": {"actualizado": datetime.now().isoformat(), "fuente": "comprasestatales.gub.uy", "version": "2.0", "total": len(items)},
-        "stats": stats,
+        "meta": {
+            "actualizado": datetime.now().isoformat(),
+            "fuente":      "comprasestatales.gub.uy",
+            "licencia":    "Datos Abiertos — Licencia DAG Uruguay",
+            "version":     "3.0",
+            "total":       len(items),
+        },
+        "stats":        stats,
         "licitaciones": items,
     }
 
