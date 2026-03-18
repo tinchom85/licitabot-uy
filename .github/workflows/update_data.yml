@@ -1,0 +1,88 @@
+name: Actualizar licitaciones y enviar alertas
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scraper/arce_scraper.py'
+      - '.github/workflows/update_data.yml'
+
+jobs:
+  scrape:
+    name: Scraper ARCE → data.json → emails
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: pip install httpx
+
+      - name: Paso 1 — Scraper ARCE
+        run: python scraper/arce_scraper.py
+
+      - name: Verificar data.json
+        run: |
+          if [ ! -f data.json ]; then
+            echo "ERROR: data.json no fue generado"
+            exit 1
+          fi
+          python -c "
+          import json
+          with open('data.json') as f:
+              d = json.load(f)
+          s = d.get('stats', {})
+          print(f'Total: {s.get(\"total\", 0)} | Nuevas: {s.get(\"nuevas24\", 0)} | Urgentes: {s.get(\"urgentes\", 0)}')
+          "
+
+      - name: Paso 2 — Enviar alertas por email
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
+        run: python scraper/email_sender.py
+
+      - name: Commit y push data.json
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data.json
+          if git diff --staged --quiet; then
+            echo "Sin cambios en data.json"
+          else
+            TOTAL=$(python -c "import json; print(json.load(open('data.json'))['stats']['total'])")
+            FECHA=$(date -u '+%d/%m/%Y %H:%M UTC')
+            git commit -m "data: ${TOTAL} vigentes [${FECHA}]"
+            git push
+            echo "data.json publicado"
+          fi
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "## Resultado" >> $GITHUB_STEP_SUMMARY
+          python -c "
+          import json
+          with open('data.json') as f:
+              d = json.load(f)
+          s = d.get('stats', {})
+          print(f'| Total | {s.get(\"total\", 0)} |')
+          print(f'| Nuevas 24h | {s.get(\"nuevas24\", 0)} |')
+          print(f'| Urgentes | {s.get(\"urgentes\", 0)} |')
+          " >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Sin datos" >> $GITHUB_STEP_SUMMARY
