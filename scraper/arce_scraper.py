@@ -321,32 +321,38 @@ def parse_xml_compras(xml_bytes, incisos: dict, ues: dict, tipos: dict) -> list[
 # ──────────────────────────────────────────────
 # Fetch principal
 # ──────────────────────────────────────────────
-def fetch_todo(days_back=10) -> list[dict]:
-    end_date   = datetime.now()
-    start_date = end_date - timedelta(days=min(days_back, 10))
+def fetch_todo(dias_atras=10) -> list[dict]:
+    """
+    Trae todas las licitaciones publicadas en los ultimos N dias.
+    - tipo_publicacion=lv: llamados vigentes (los que siguen abiertos)
+    - hora_inicial=00 y hora_final=23: cubre el dia completo, no solo desde la hora actual
+    - Max 10 dias por request segun manual G2B
+    """
+    hoy   = datetime.now()
+    desde = hoy - timedelta(days=min(dias_atras, 10))
 
     params = {
         "tipo_publicacion": "lv",
-        "anio_inicial": str(start_date.year),
-        "mes_inicial":  f"{start_date.month:02d}",
-        "dia_inicial":  f"{start_date.day:02d}",
-        "hora_inicial": f"{start_date.hour:02d}",
-        "anio_final":   str(end_date.year),
-        "mes_final":    f"{end_date.month:02d}",
-        "dia_final":    f"{end_date.day:02d}",
-        "hora_final":   f"{end_date.hour:02d}",
+        "anio_inicial": str(desde.year),
+        "mes_inicial":  f"{desde.month:02d}",
+        "dia_inicial":  f"{desde.day:02d}",
+        "hora_inicial": "00",           # desde medianoche del dia inicial
+        "anio_final":   str(hoy.year),
+        "mes_final":    f"{hoy.month:02d}",
+        "dia_final":    f"{hoy.day:02d}",
+        "hora_final":   "23",           # hasta el final del dia de hoy
     }
 
-    log.info(f"Rango: {start_date.strftime('%d/%m/%Y %H:%M')} -> {end_date.strftime('%d/%m/%Y %H:%M')}")
+    log.info(f"Rango: {desde.strftime('%d/%m/%Y')} 00:00 -> {hoy.strftime('%d/%m/%Y')} 23:00")
+    log.info(f"URL: {ARCE_REPORTE}")
 
     with httpx.Client(headers=HEADERS, timeout=30, follow_redirects=True) as client:
-        # 1. Cargar codigueras primero
+        # 1. Codigueras (incisos, UEs, tipos de compra)
         incisos = cargar_incisos(client)
         ues     = cargar_unidades_ejecutoras(client)
         tipos   = cargar_tipos_compra(client)
 
-        # 2. Fetch compras vigentes
-        log.info(f"Consultando ARCE: {ARCE_REPORTE}")
+        # 2. Una sola consulta de 10 dias
         try:
             resp = client.get(ARCE_REPORTE, params=params)
             log.info(f"HTTP {resp.status_code} — {len(resp.content):,} bytes")
@@ -358,7 +364,9 @@ def fetch_todo(days_back=10) -> list[dict]:
             log.error(f"Error de conexion: {e}")
             return []
 
-        return parse_xml_compras(resp.content, incisos, ues, tipos)
+        items = parse_xml_compras(resp.content, incisos, ues, tipos)
+        log.info(f"Total traido: {len(items)} licitaciones")
+        return items
 
 # ──────────────────────────────────────────────
 # Post-procesamiento
@@ -420,7 +428,7 @@ def main():
         except Exception:
             log.warning("No se pudo leer data anterior")
 
-    items_raw = fetch_todo(days_back=10)
+    items_raw = fetch_todo(dias_atras=10)
 
     if not items_raw:
         log.error("ARCE no devolvio datos.")
