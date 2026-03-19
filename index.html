@@ -68,6 +68,13 @@ select:focus{outline:none;border-color:var(--text);box-shadow:0 0 0 3px rgba(0,0
 .thead{display:grid;grid-template-columns:70px minmax(0,1fr) 140px 140px 100px 110px;padding:8px 24px;background:var(--bg2);border-bottom:1px solid var(--line);position:sticky;top:54px;z-index:10}
 .th{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 
+/* SORTING */
+.th.sortable { cursor: pointer; user-select: none; transition: color 0.15s; }
+.th.sortable:hover { color: var(--text); }
+.th.sortable::after { content: ' ↕'; font-size: 10px; opacity: 0.4; margin-left: 2px; }
+.th.sortable.asc::after { content: ' ↑'; opacity: 1; color: var(--text); }
+.th.sortable.desc::after { content: ' ↓'; opacity: 1; color: var(--text); }
+
 /* ROWS */
 .feed{background:#fff}
 .row{display:grid;grid-template-columns:70px minmax(0,1fr) 140px 140px 100px 110px;padding:13px 24px;border-bottom:1px solid var(--line);align-items:center;transition:background .1s;text-decoration:none;color:inherit}
@@ -210,9 +217,9 @@ select:focus{outline:none;border-color:var(--text);box-shadow:0 0 0 3px rgba(0,0
 <div class="thead">
   <div class="th">Tipo</div>
   <div class="th">Objeto · Organismo</div>
-  <div class="th">Monto estimado</div>
+  <div class="th sortable" onclick="sortBy('monto')">Monto estimado</div>
   <div class="th">Rubro</div>
-  <div class="th">Cierra en</div>
+  <div class="th sortable" onclick="sortBy('dias')">Cierra en</div>
   <div class="th">Estado</div>
 </div>
 
@@ -251,6 +258,24 @@ select:focus{outline:none;border-color:var(--text);box-shadow:0 0 0 3px rgba(0,0
 // ─── Estado global ───────────────────────────
 let ALL = [];
 let visible = [];
+let sortCol = null;
+let sortAsc = true;
+
+// ─── Lógica de Ordenamiento ──────────────────
+function sortBy(col) {
+  if (sortCol === col) {
+    sortAsc = !sortAsc;
+  } else {
+    sortCol = col;
+    sortAsc = (col === 'dias');
+  }
+  
+  document.querySelectorAll('.th.sortable').forEach(el => el.classList.remove('asc', 'desc'));
+  const targetTh = document.querySelector(`.th.sortable[onclick="sortBy('${col}')"]`);
+  if (targetTh) targetTh.classList.add(sortAsc ? 'asc' : 'desc');
+
+  render(false);
+}
 
 // ─── Helpers ─────────────────────────────────
 function fmt(n, moneda) {
@@ -335,9 +360,19 @@ function render(animate) {
   } else {
     [...visible]
       .sort((a, b) => {
-        const da = typeof a.dias === 'number' ? a.dias : 999;
-        const db = typeof b.dias === 'number' ? b.dias : 999;
-        return da - db || (b.monto || 0) - (a.monto || 0);
+        if (sortCol === 'monto') {
+          const ma = a.monto || 0;
+          const mb = b.monto || 0;
+          return sortAsc ? ma - mb : mb - ma;
+        } else if (sortCol === 'dias') {
+          const da = typeof a.dias === 'number' ? a.dias : 999;
+          const db = typeof b.dias === 'number' ? b.dias : 999;
+          return sortAsc ? da - db : db - da;
+        }
+        
+        const da_def = typeof a.dias === 'number' ? a.dias : 999;
+        const db_def = typeof b.dias === 'number' ? b.dias : 999;
+        return da_def - db_def || (b.monto || 0) - (a.monto || 0);
       })
       .forEach((l, i) => feed.appendChild(makeRow(l, i, animate)));
   }
@@ -354,10 +389,13 @@ function applyFilters() {
   const plazo = document.getElementById('f-plazo').value;
 
   visible = ALL.filter(l => {
-    if (org   && l.org   !== org)             return false;
-    if (tipo  && l.tipo  !== tipo)            return false;
-    if (rubro && l.rubro !== rubro)           return false;
-    if (plazo && typeof l.dias === 'number' && l.dias > parseInt(plazo)) return false;
+    if (org   && l.org   !== org)              return false;
+    if (tipo  && l.tipo  !== tipo)             return false;
+    if (rubro && l.rubro !== rubro)            return false;
+    
+    // Filtro de días corregido:
+    if (plazo && (typeof l.dias !== 'number' || l.dias > parseInt(plazo) || l.dias < 0)) return false;
+    
     return true;
   });
   render(false);
@@ -394,7 +432,6 @@ function nextToast() {
 // ─── Carga de datos ──────────────────────────
 async function loadData() {
   try {
-    // Cache-bust para asegurar datos frescos
     const res = await fetch('data.json?v=' + Date.now());
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -404,7 +441,7 @@ async function loadData() {
 
     // Stats
     const s = data.stats || {};
-    animNum('s-total',  s.total   || ALL.length);
+    animNum('s-total',  s.total  || ALL.length);
     animNum('s-nuevas', s.nuevas24 || ALL.filter(l => l.nueva).length);
     animNum('s-urg',    s.urgentes || ALL.filter(l => l.dias <= 7).length);
 
